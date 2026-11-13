@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2013-2020 Nikita Koksharov
+ * Copyright (c) 2013-2026 Nikita Koksharov
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import org.hibernate.cache.spi.RegionFactory;
 import org.hibernate.cache.spi.TransactionalDataRegion;
 import org.redisson.api.RFuture;
 import org.redisson.api.RMapCache;
-import org.redisson.connection.ConnectionManager;
+import org.redisson.connection.ServiceManager;
 import org.redisson.hibernate.RedissonRegionFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,35 +44,37 @@ public class BaseRegion implements TransactionalDataRegion, GeneralDataRegion {
     final RMapCache<Object, Object> mapCache;
     final RegionFactory regionFactory;
     final CacheDataDescription metadata;
-    final ConnectionManager connectionManager;
+    final ServiceManager serviceManager;
     
     int ttl;
     int maxIdle;
+    int size;
     boolean fallback;
     volatile boolean fallbackMode;
 
-    public BaseRegion(RMapCache<Object, Object> mapCache, ConnectionManager connectionManager, RegionFactory regionFactory, CacheDataDescription metadata, Properties properties, String defaultKey) {
+    public BaseRegion(RMapCache<Object, Object> mapCache, ServiceManager serviceManager, RegionFactory regionFactory, CacheDataDescription metadata, Properties properties, String defaultKey) {
         super();
         this.mapCache = mapCache;
         this.regionFactory = regionFactory;
         this.metadata = metadata;
-        this.connectionManager = connectionManager;
+        this.serviceManager = serviceManager;
         
         String maxEntries = getProperty(properties, mapCache.getName(), defaultKey, RedissonRegionFactory.MAX_ENTRIES_SUFFIX);
         if (maxEntries != null) {
-            mapCache.setMaxSize(Integer.valueOf(maxEntries));
+            size = Integer.parseInt(maxEntries);
+            mapCache.setMaxSize(size);
         }
         String timeToLive = getProperty(properties, mapCache.getName(), defaultKey, RedissonRegionFactory.TTL_SUFFIX);
         if (timeToLive != null) {
-            ttl = Integer.valueOf(timeToLive);
+            ttl = Integer.parseInt(timeToLive);
         }
         String maxIdleTime = getProperty(properties, mapCache.getName(), defaultKey, RedissonRegionFactory.MAX_IDLE_SUFFIX);
         if (maxIdleTime != null) {
-            maxIdle = Integer.valueOf(maxIdleTime);
+            maxIdle = Integer.parseInt(maxIdleTime);
         }
 
         String fallbackValue = (String) properties.getOrDefault(RedissonRegionFactory.FALLBACK, "false");
-        fallback = Boolean.valueOf(fallbackValue);
+        fallback = Boolean.parseBoolean(fallbackValue);
     }
 
     private String getProperty(Properties properties, String name, String defaultKey, String suffix) {
@@ -89,9 +91,9 @@ public class BaseRegion implements TransactionalDataRegion, GeneralDataRegion {
 
     private void ping() {
         fallbackMode = true;
-        connectionManager.newTimeout(t -> {
+        serviceManager.newTimeout(t -> {
             RFuture<Boolean> future = mapCache.isExistsAsync();
-            future.onComplete((r, ex) -> {
+            future.whenComplete((r, ex) -> {
                 if (ex == null) {
                     fallbackMode = false;
                 } else {
@@ -180,6 +182,9 @@ public class BaseRegion implements TransactionalDataRegion, GeneralDataRegion {
             return null;
         }
         try {
+            if (maxIdle == 0 && size == 0) {
+                return mapCache.getWithTTLOnly(key);
+            }
             return mapCache.get(key);
         } catch (Exception e) {
             if (fallback) {

@@ -1,38 +1,22 @@
 package org.redisson;
 
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
+import org.junit.jupiter.api.BeforeAll;
 import org.reactivestreams.Publisher;
 import org.redisson.api.RCollectionReactive;
 import org.redisson.api.RScoredSortedSetReactive;
 import org.redisson.api.RedissonReactiveClient;
-import org.redisson.config.Config;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.io.IOException;
 import java.util.Iterator;
 
-public abstract class BaseReactiveTest {
+public abstract class BaseReactiveTest extends RedisDockerTest {
 
     protected static RedissonReactiveClient redisson;
 
-    @BeforeClass
-    public static void beforeClass() throws IOException, InterruptedException {
-        RedisRunner.startDefaultRedisServerInstance();
-        redisson = createInstance();
-    }
-
-    @AfterClass
-    public static void afterClass() throws InterruptedException {
-        redisson.shutdown();
-        RedisRunner.shutDownDefaultRedisServerInstance();
-    }
-
-    @Before
-    public void before() throws IOException, InterruptedException {
-        sync(redisson.getKeys().flushall());
+    @BeforeAll
+    public static void beforeClass() {
+        redisson = RedisDockerTest.redisson.reactive();
     }
 
     public static <V> Iterable<V> sync(RScoredSortedSetReactive<V> list) {
@@ -54,14 +38,9 @@ public abstract class BaseReactiveTest {
     public static <V> V sync(Mono<V> mono) {
         return mono.block();
     }
-    
+
     public static <V> V sync(Flux<V> flux) {
         return flux.single().block();
-    }
-
-    public static RedissonReactiveClient createInstance() {
-        Config config = BaseTest.createConfig();
-        return Redisson.createReactive(config);
     }
 
 }
